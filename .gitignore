@@ -22,3 +22,6 @@ maven-central-deploy.log
 
 # VS Code configuration files
 .vscode
+
+# DynamoDB Local (embedded, used by tests) writes this into the working directory
+dynamodb-local-metadata.json
