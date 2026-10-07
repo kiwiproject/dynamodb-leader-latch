@@ -169,6 +169,9 @@ class DynamoDbLeaderLatchIntegrationTest {
         // this follower will not try to acquire again for an hour, so nobody takes over after a closes
         var slowFollower = newLatch("slow-follower", DynamoDbLocalExtension.newClient(), Duration.ofHours(1));
         slowFollower.start();
+
+        // the first acquisition attempt runs asynchronously; wait for it so it cannot run after a closes
+        await().atMost(WAIT).until(() -> slowFollower.acquisitionAttemptCount() >= 1);
         assertThat(slowFollower.hasLeadership()).isFalse();
 
         a.close();

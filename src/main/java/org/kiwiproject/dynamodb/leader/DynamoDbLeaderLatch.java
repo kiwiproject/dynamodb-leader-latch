@@ -18,6 +18,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 /**
@@ -44,6 +45,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
     private final Supplier<LockGateway> gatewayFactory;
     private final List<LeaderLatchListener> listeners = new CopyOnWriteArrayList<>();
     private final Object stateLock = new Object();
+    private final AtomicInteger acquisitionAttempts = new AtomicInteger();
 
     private volatile State state = State.NEW;
     private volatile @Nullable LockGateway gateway;
@@ -119,6 +121,11 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
     @Override
     public String getLeadershipKey() {
         return leadershipKey;
+    }
+
+    @VisibleForTesting
+    int acquisitionAttemptCount() {
+        return acquisitionAttempts.get();
     }
 
     @VisibleForTesting
@@ -206,6 +213,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
         }
 
         try {
+            acquisitionAttempts.incrementAndGet();
             var acquired = currentGateway.tryAcquire(this::onLeaseInDanger);
             lastAcquisitionError = null;
             acquisitionErrorLogged = false;
