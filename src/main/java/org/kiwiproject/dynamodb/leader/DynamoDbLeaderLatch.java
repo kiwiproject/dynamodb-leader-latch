@@ -346,9 +346,6 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
             return currentGateway.currentOwner()
                     .<LeaderInfo>map(owner -> new LeaderInfo.Leader(owner, Instant.now()))
                     .orElseGet(LeaderInfo.NoLeader::new);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return new LeaderInfo.LookupFailed(e);
         } catch (Exception e) {
             return new LeaderInfo.LookupFailed(e);
         }
