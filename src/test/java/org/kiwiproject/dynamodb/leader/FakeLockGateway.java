@@ -1,5 +1,7 @@
 package org.kiwiproject.dynamodb.leader;
 
+import static java.util.Objects.nonNull;
+
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -44,7 +46,7 @@ class FakeLockGateway implements LockGateway {
             @Override
             public void release() throws InterruptedException {
                 var gate = releaseGate;
-                if (gate != null) {
+                if (nonNull(gate)) {
                     gate.await(30, TimeUnit.SECONDS);
                 }
                 releaseCount.incrementAndGet();
