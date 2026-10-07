@@ -53,6 +53,29 @@ class LeaderLatchConfigurationTest {
     }
 
     @Test
+    void shouldRejectDurationsUnderOneMillisecond() {
+        var config = LeaderLatchConfiguration.forTable("t");
+
+        assertAll(
+                () -> assertThatIllegalArgumentException()
+                        .isThrownBy(() -> config.withAcquisitionRetryInterval(Duration.ofNanos(1)))
+                        .withMessage("acquisitionRetryInterval must be at least 1 millisecond"),
+                () -> assertThatIllegalArgumentException()
+                        .isThrownBy(() -> config.withTimings(Duration.ofSeconds(30), Duration.ofNanos(500_000)))
+                        .withMessage("heartbeatPeriod must be at least 1 millisecond")
+        );
+    }
+
+    @Test
+    void shouldRejectHugeDurationsWithoutOverflowing() {
+        var config = LeaderLatchConfiguration.forTable("t");
+
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> config.withTimings(Duration.ofSeconds(30), Duration.ofSeconds(Long.MAX_VALUE)))
+                .withMessageContaining("must be at least 3 times heartbeatPeriod");
+    }
+
+    @Test
     void shouldRejectNullDurations() {
         var config = LeaderLatchConfiguration.forTable("t");
 

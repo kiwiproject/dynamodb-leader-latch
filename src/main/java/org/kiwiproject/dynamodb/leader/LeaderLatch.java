@@ -67,6 +67,10 @@ public interface LeaderLatch extends AutoCloseable {
 
     /**
      * Add a listener that is notified when leadership is acquired or lost.
+     * <p>
+     * Add listeners before calling {@link #start()}. Leadership can be acquired as soon as the latch
+     * starts, and a listener added afterward is not told about leadership that was already acquired;
+     * it is only notified of later changes.
      *
      * @param listener the listener
      */
@@ -91,7 +95,8 @@ public interface LeaderLatch extends AutoCloseable {
      * Run the action synchronously only if this latch is the leader.
      *
      * @param action the action
-     * @return the outcome; never throws, even if the action does
+     * @return the outcome; an exception thrown by the action is returned as
+     * {@link WhenLeaderResult.ActionFailed} (an {@link Error} is not caught)
      */
     default WhenLeaderResult<Void> whenLeader(Runnable action) {
         return whenLeader(() -> {
@@ -105,7 +110,8 @@ public interface LeaderLatch extends AutoCloseable {
      *
      * @param action the action
      * @param <T>    the result type
-     * @return the outcome; never throws, even if the action does
+     * @return the outcome; an exception thrown by the action is returned as
+     * {@link WhenLeaderResult.ActionFailed} (an {@link Error} is not caught)
      */
     default <T> WhenLeaderResult<T> whenLeader(Supplier<T> action) {
         var status = checkLeadershipStatus();
@@ -124,7 +130,7 @@ public interface LeaderLatch extends AutoCloseable {
      * Run the action asynchronously (on the common pool) only if this latch is the leader.
      *
      * @param action the action
-     * @return a future that always completes normally with the outcome
+     * @return a future that completes with the outcome, as for {@link #whenLeader(Supplier)}
      */
     default CompletableFuture<WhenLeaderResult<Void>> whenLeaderAsync(Runnable action) {
         return CompletableFuture.supplyAsync(() -> whenLeader(action));
@@ -135,7 +141,7 @@ public interface LeaderLatch extends AutoCloseable {
      *
      * @param action the action
      * @param <T>    the result type
-     * @return a future that always completes normally with the outcome
+     * @return a future that completes with the outcome, as for {@link #whenLeader(Supplier)}
      */
     default <T> CompletableFuture<WhenLeaderResult<T>> whenLeaderAsync(Supplier<T> action) {
         return CompletableFuture.supplyAsync(() -> whenLeader(action));
@@ -147,7 +153,7 @@ public interface LeaderLatch extends AutoCloseable {
      * @param action   the action
      * @param executor the executor
      * @param <T>      the result type
-     * @return a future that always completes normally with the outcome
+     * @return a future that completes with the outcome, as for {@link #whenLeader(Supplier)}
      */
     default <T> CompletableFuture<WhenLeaderResult<T>> whenLeaderAsync(Supplier<T> action, Executor executor) {
         return CompletableFuture.supplyAsync(() -> whenLeader(action), executor);

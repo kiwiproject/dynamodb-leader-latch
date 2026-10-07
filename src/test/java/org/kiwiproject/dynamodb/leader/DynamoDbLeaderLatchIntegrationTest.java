@@ -114,6 +114,7 @@ class DynamoDbLeaderLatchIntegrationTest {
 
         var survivor = newLatch("survivor");
         survivor.start();
+        await().atMost(WAIT).until(() -> survivor.acquisitionAttemptCount() >= 1);
         assertThat(survivor.hasLeadership()).isFalse();
 
         // simulate the leader's process losing DynamoDB connectivity: heartbeats and release now fail
@@ -124,7 +125,7 @@ class DynamoDbLeaderLatchIntegrationTest {
     }
 
     @Test
-    void shouldReacquireLeadershipAfterLosingIt() {
+    void shouldHandOffLeadershipToFollowerWhenLeaderCloses() {
         var events = new CopyOnWriteArrayList<String>();
         var a = newLatch("a");
         a.addListener(listenerRecordingTo(events));
@@ -139,7 +140,7 @@ class DynamoDbLeaderLatchIntegrationTest {
 
         assertThat(events).containsExactly("isLeader", "notLeader");
 
-        // a fresh latch for the same participant can lead again once b steps down
+        // a fresh latch for the same participant ID can lead again once b steps down
         b.close();
         var aAgain = newLatch("a");
         aAgain.start();

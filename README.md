@@ -33,9 +33,10 @@ latch.addListener(new LeaderLatchListener() {
     public void notLeader() { /* stop leader-only work */ }
 });
 
-switch (latch.start()) {
-    case StartResult.Failed failed -> log.error("Could not start latch", failed.cause());
-    default -> { /* started; leadership is acquired asynchronously */ }
+// Start before relying on leadership; add listeners before start() so none are missed.
+// start() does not wait to become the leader; leadership is acquired asynchronously.
+if (latch.start() instanceof StartResult.Failed failed) {
+    log.error("Could not start latch", failed.cause());
 }
 
 if (latch.hasLeadership()) {

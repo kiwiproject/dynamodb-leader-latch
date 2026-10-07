@@ -1,6 +1,8 @@
 package org.kiwiproject.dynamodb.leader;
 
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -15,6 +17,7 @@ class FakeLockGateway implements LockGateway {
     final AtomicInteger releaseCount = new AtomicInteger();
     final AtomicInteger acquireAttempts = new AtomicInteger();
     final AtomicBoolean closed = new AtomicBoolean();
+    volatile CountDownLatch releaseGate;
     volatile Runnable onLeaseInDanger;
     volatile String owner;
 
@@ -39,7 +42,11 @@ class FakeLockGateway implements LockGateway {
             }
 
             @Override
-            public void release() {
+            public void release() throws InterruptedException {
+                var gate = releaseGate;
+                if (gate != null) {
+                    gate.await(30, TimeUnit.SECONDS);
+                }
                 releaseCount.incrementAndGet();
             }
         });

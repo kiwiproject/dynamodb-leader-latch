@@ -67,7 +67,8 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
     // only accessed on the latch executor thread
     private boolean acquisitionErrorLogged;
 
-    private long closeTimeoutMillis = DEFAULT_CLOSE_TIMEOUT_MILLIS;
+    private volatile long closeTimeoutMillis = DEFAULT_CLOSE_TIMEOUT_MILLIS;
+    private volatile @Nullable Thread latchThread;
 
     /**
      * Create a latch.
@@ -101,10 +102,8 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
                                                          LeaderLatchConfiguration configuration,
                                                          String leadershipKey,
                                                          String participantId) {
+        // configuration, leadershipKey and participantId are validated by the constructor
         requireNotNull(dynamoDbClient, "dynamoDbClient must not be null");
-        requireNotNull(configuration, "configuration must not be null");
-        requireNotBlank(leadershipKey, "leadershipKey must not be blank");
-        requireNotBlank(participantId, "participantId must not be blank");
         return () -> new AwsLockGateway(dynamoDbClient, configuration, leadershipKey, participantId);
     }
 
@@ -185,6 +184,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
         return Executors.newSingleThreadScheduledExecutor(runnable -> {
             var thread = new Thread(runnable, "dynamodb-leader-latch-" + leadershipKey);
             thread.setDaemon(true);
+            latchThread = thread;
             return thread;
         });
     }
@@ -249,12 +249,18 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
     }
 
     private void becomeLeader(Lease newLease) {
+        boolean accepted;
         synchronized (stateLock) {
-            if (state != State.STARTED || nonNull(lease)) {
-                releaseQuietly(newLease);
-                return;
+            accepted = state == State.STARTED && isNull(lease);
+            if (accepted) {
+                lease = newLease;
             }
-            lease = newLease;
+        }
+
+        if (!accepted) {
+            // release outside the lock; it is a network call
+            releaseQuietly(newLease);
+            return;
         }
 
         LOG.info("Leadership acquired for key {} by {}", leadershipKey, id);
@@ -272,10 +278,13 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
             return;
         }
 
+        LOG.warn("Leadership lost for key {} by {}: {}", leadershipKey, id, reason);
+
+        // Tell listeners first so leader-only work stops promptly; releasing is a network call that can be slow
+        notifyListeners(false);
+
         // Always release, otherwise the lock client could keep heartbeating a lease we have given up
         releaseQuietly(old);
-        LOG.warn("Leadership lost for key {} by {}: {}", leadershipKey, id, reason);
-        notifyListeners(false);
     }
 
     private void releaseQuietly(Lease toRelease) {
@@ -369,8 +378,10 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
 
         LOG.info("Stopping leader latch {} for key {}", id, leadershipKey);
 
+        var deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(closeTimeoutMillis);
+
         if (nonNull(currentExecutor)) {
-            stopExecutor(currentExecutor, nonNull(held));
+            stopExecutor(currentExecutor, nonNull(held), deadlineNanos);
         }
         if (nonNull(held)) {
             LOG.info("Leadership lost for key {} by {}: latch closed", leadershipKey, id);
@@ -384,10 +395,10 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
             if (nonNull(gatewayToClose)) {
                 gatewayToClose.close();
             }
-        });
+        }, deadlineNanos);
     }
 
-    private void stopExecutor(ScheduledExecutorService toStop, boolean notifyNotLeader) {
+    private void stopExecutor(ScheduledExecutorService toStop, boolean notifyNotLeader, long deadlineNanos) {
         try {
             if (notifyNotLeader) {
                 // runs on the latch thread so it is ordered after any in-flight isLeader notification
@@ -397,10 +408,17 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
             LOG.trace("Latch executor already shut down", e);
         }
 
+        // Tasks that were already queued (such as the notification above) still run after shutdown()
         toStop.shutdown();
+
+        if (Thread.currentThread() == latchThread) {
+            // close() was called from a listener on the latch thread; waiting here would only wait for ourselves
+            return;
+        }
+
         try {
-            if (!toStop.awaitTermination(closeTimeoutMillis, TimeUnit.MILLISECONDS)) {
-                LOG.warn("Latch executor for key {} did not stop in {} ms; forcing", leadershipKey, closeTimeoutMillis);
+            if (!toStop.awaitTermination(remainingMillis(deadlineNanos), TimeUnit.MILLISECONDS)) {
+                LOG.warn("Latch executor for key {} did not stop within {} ms; forcing", leadershipKey, closeTimeoutMillis);
                 toStop.shutdownNow();
             }
         } catch (InterruptedException e) {
@@ -409,12 +427,16 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
         }
     }
 
-    private void runBounded(String description, Runnable task) {
+    private static long remainingMillis(long deadlineNanos) {
+        return Math.max(1, TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()));
+    }
+
+    private void runBounded(String description, Runnable task, long deadlineNanos) {
         var thread = new Thread(task, "dynamodb-leader-latch-close-" + leadershipKey);
         thread.setDaemon(true);
         thread.start();
         try {
-            thread.join(closeTimeoutMillis);
+            thread.join(remainingMillis(deadlineNanos));
             if (thread.isAlive()) {
                 LOG.warn("Timed out after {} ms trying to {} for key {}", closeTimeoutMillis, description, leadershipKey);
             }

@@ -31,6 +31,8 @@ public record LeaderLatchConfiguration(String tableName,
      */
     public static final int MIN_LEASE_TO_HEARTBEAT_RATIO = 3;
 
+    private static final Duration MIN_DURATION = Duration.ofMillis(1);
+
     /**
      * Default lease duration.
      */
@@ -57,7 +59,8 @@ public record LeaderLatchConfiguration(String tableName,
         checkPositive(leaseDuration, "leaseDuration");
         checkPositive(heartbeatPeriod, "heartbeatPeriod");
         checkPositive(acquisitionRetryInterval, "acquisitionRetryInterval");
-        checkArgument(leaseDuration.compareTo(heartbeatPeriod.multipliedBy(MIN_LEASE_TO_HEARTBEAT_RATIO)) >= 0,
+        // dividedBy cannot overflow, unlike multipliedBy
+        checkArgument(heartbeatPeriod.compareTo(leaseDuration.dividedBy(MIN_LEASE_TO_HEARTBEAT_RATIO)) <= 0,
                 "leaseDuration (%s) must be at least %s times heartbeatPeriod (%s)",
                 leaseDuration, MIN_LEASE_TO_HEARTBEAT_RATIO, heartbeatPeriod);
     }
@@ -65,6 +68,7 @@ public record LeaderLatchConfiguration(String tableName,
     private static void checkPositive(Duration duration, String name) {
         checkArgumentNotNull(duration, "{} must not be null", name);
         checkArgument(isPositive(duration), "%s must be positive", name);
+        checkArgument(duration.compareTo(MIN_DURATION) >= 0, "%s must be at least 1 millisecond", name);
     }
 
     /**

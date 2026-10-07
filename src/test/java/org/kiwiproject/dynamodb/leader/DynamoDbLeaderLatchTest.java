@@ -23,6 +23,7 @@ import org.kiwiproject.dynamodb.leader.WhenLeaderResult.SkippedNotLeader;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 
 @DisplayName("DynamoDbLeaderLatch (state machine)")
 class DynamoDbLeaderLatchTest {
@@ -274,6 +275,54 @@ class DynamoDbLeaderLatchTest {
                     () -> assertThat(gateway.closed).isTrue(),
                     () -> assertThat(events).containsExactly("isLeader", "notLeader")
             );
+        }
+
+        @Test
+        void shouldDeliverNotLeaderWhenCloseIsCalledFromAListener() {
+            latch.addListener(new LeaderLatchListener() {
+                @Override
+                public void isLeader() {
+                    latch.close();
+                }
+
+                @Override
+                public void notLeader() {
+                    // nothing to do
+                }
+            });
+
+            latch.start();
+
+            // would take the full close timeout, and drop the notification, if close() waited on its own thread
+            await().atMost(Duration.ofSeconds(2)).until(() -> events.contains("notLeader"));
+            assertAll(
+                    () -> assertThat(events).containsExactly("isLeader", "notLeader"),
+                    () -> assertThat(latch.checkLeadershipStatus()).isInstanceOf(Closed.class),
+                    () -> assertThat(gateway.closed).isTrue()
+            );
+        }
+
+        @Test
+        void shouldBoundCloseTimeWhenReleaseHangs() throws InterruptedException {
+            var gate = new CountDownLatch(1);
+            gateway.releaseGate = gate;
+            latch.setCloseTimeoutMillis(300);
+            latch.start();
+            await().atMost(WAIT).until(latch::hasLeadership);
+
+            try {
+                var start = System.nanoTime();
+                latch.close();
+                var elapsedMillis = Duration.ofNanos(System.nanoTime() - start).toMillis();
+
+                assertAll(
+                        () -> assertThat(elapsedMillis).isLessThan(2_000),
+                        () -> assertThat(latch.checkLeadershipStatus()).isInstanceOf(Closed.class),
+                        () -> assertThat(events).containsExactly("isLeader", "notLeader")
+                );
+            } finally {
+                gate.countDown();
+            }
         }
 
         @Test
