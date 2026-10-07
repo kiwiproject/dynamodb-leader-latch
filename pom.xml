@@ -38,6 +38,7 @@
         <!-- Versions for test dependencies -->
         <kiwi-test.version>4.3.0</kiwi-test.version>
         <dynamodb-local.version>2.6.1</dynamodb-local.version>
+        <log4j.version>2.26.1</log4j.version>
 
         <!-- Sonar properties -->
         <sonar.projectKey>kiwiproject_dynamodb-leader-latch</sonar.projectKey>
@@ -57,6 +58,15 @@
                 <groupId>software.amazon.awssdk</groupId>
                 <artifactId>bom</artifactId>
                 <version>${aws-sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- DynamoDB Local (test scope only) brings in an old log4j; override it with a current version -->
+            <dependency>
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-bom</artifactId>
+                <version>${log4j.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -111,6 +121,19 @@
             <groupId>com.amazonaws</groupId>
             <artifactId>DynamoDBLocal</artifactId>
             <version>${dynamodb-local.version}</version>
+            <scope>test</scope>
+            <exclusions>
+                <!-- route DynamoDB Local's Log4j 2 API calls to SLF4J (logback) instead -->
+                <exclusion>
+                    <groupId>org.apache.logging.log4j</groupId>
+                    <artifactId>log4j-core</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-to-slf4j</artifactId>
             <scope>test</scope>
         </dependency>
 
