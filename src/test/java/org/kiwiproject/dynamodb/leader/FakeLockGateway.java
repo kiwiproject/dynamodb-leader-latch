@@ -15,6 +15,10 @@ class FakeLockGateway implements LockGateway {
 
     final AtomicBoolean lockAvailable = new AtomicBoolean(true);
     final AtomicBoolean failAcquisition = new AtomicBoolean();
+    final AtomicBoolean interruptAcquisition = new AtomicBoolean();
+    final AtomicBoolean failOwnerLookup = new AtomicBoolean();
+    final AtomicBoolean failIsHeld = new AtomicBoolean();
+    final AtomicInteger isHeldCalls = new AtomicInteger();
     final AtomicBoolean leaseHeld = new AtomicBoolean(true);
     final AtomicInteger releaseCount = new AtomicInteger();
     final AtomicInteger acquireAttempts = new AtomicInteger();
@@ -24,9 +28,13 @@ class FakeLockGateway implements LockGateway {
     volatile String owner;
 
     @Override
-    public Optional<Lease> tryAcquire(Runnable onLeaseInDanger) {
+    public Optional<Lease> tryAcquire(Runnable onLeaseInDanger) throws InterruptedException {
         acquireAttempts.incrementAndGet();
         this.onLeaseInDanger = onLeaseInDanger;
+
+        if (interruptAcquisition.get()) {
+            throw new InterruptedException("simulated interrupt");
+        }
 
         if (failAcquisition.get()) {
             throw new IllegalStateException("simulated DynamoDB error");
@@ -40,6 +48,10 @@ class FakeLockGateway implements LockGateway {
         return Optional.of(new Lease() {
             @Override
             public boolean isHeld() {
+                isHeldCalls.incrementAndGet();
+                if (failIsHeld.get()) {
+                    throw new IllegalStateException("simulated lease check error");
+                }
                 return leaseHeld.get();
             }
 
@@ -64,6 +76,9 @@ class FakeLockGateway implements LockGateway {
 
     @Override
     public Optional<String> currentOwner() {
+        if (failOwnerLookup.get()) {
+            throw new IllegalStateException("simulated lookup error");
+        }
         return Optional.ofNullable(owner);
     }
 

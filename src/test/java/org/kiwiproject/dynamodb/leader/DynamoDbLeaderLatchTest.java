@@ -1,6 +1,7 @@
 package org.kiwiproject.dynamodb.leader;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -26,6 +27,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @DisplayName("DynamoDbLeaderLatch (state machine)")
 class DynamoDbLeaderLatchTest {
@@ -245,6 +248,65 @@ class DynamoDbLeaderLatchTest {
         }
 
         @Test
+        void shouldNotReportDoesNotHaveLeadershipWhenLeader() {
+            latch.start();
+            await().atMost(WAIT).until(latch::hasLeadership);
+
+            assertThat(latch.doesNotHaveLeadership()).isFalse();
+        }
+
+        @Test
+        void shouldReportNotLeaderWhenLeaseIsLostBeforeTheNextLeaseCheck() {
+            // lease checks run every 15 seconds, so none happens during this test
+            var slowConfig = LeaderLatchConfiguration.forTable("test-table")
+                    .withTimings(Duration.ofSeconds(90), Duration.ofSeconds(30))
+                    .withAcquisitionRetryInterval(Duration.ofMillis(50));
+            var slowLatch = new DynamoDbLeaderLatch(slowConfig, "customer-service", "customer-service/1.0/host:8080", () -> gateway);
+
+            try {
+                slowLatch.start();
+                await().atMost(WAIT).until(slowLatch::hasLeadership);
+
+                gateway.leaseHeld.set(false);
+
+                assertAll(
+                        () -> assertThat(slowLatch.hasLeadership()).isFalse(),
+                        () -> assertThat(slowLatch.checkLeadershipStatus()).isInstanceOf(NotLeader.class)
+                );
+            } finally {
+                slowLatch.close();
+            }
+        }
+
+        @Test
+        void shouldKeepTryingWhenAcquisitionIsInterrupted() {
+            gateway.interruptAcquisition.set(true);
+            latch.start();
+
+            await().atMost(WAIT).until(() -> gateway.acquireAttempts.get() >= 3);
+            assertThat(latch.hasLeadership()).isFalse();
+
+            gateway.interruptAcquisition.set(false);
+            await().atMost(WAIT).until(latch::hasLeadership);
+        }
+
+        @Test
+        void shouldKeepCheckingTheLeaseWhenACheckThrowsUnexpectedly() {
+            latch.start();
+            await().atMost(WAIT).until(latch::hasLeadership);
+
+            gateway.failIsHeld.set(true);
+            var callsBefore = gateway.isHeldCalls.get();
+            await().atMost(WAIT).until(() -> gateway.isHeldCalls.get() >= callsBefore + 3);
+
+            gateway.failIsHeld.set(false);
+            gateway.lockAvailable.set(false);
+            gateway.leaseHeld.set(false);
+
+            await().atMost(WAIT).until(() -> events.contains("notLeader"));
+        }
+
+        @Test
         void shouldBeUncertainWhenAcquisitionFailsWithApiError() {
             gateway.failAcquisition.set(true);
             latch.start();
@@ -352,6 +414,69 @@ class DynamoDbLeaderLatchTest {
         }
 
         @Test
+        void shouldIgnoreLeaseDangerCallbackAfterClose() {
+            latch.start();
+            await().atMost(WAIT).until(latch::hasLeadership);
+            var callback = gateway.onLeaseInDanger;
+
+            latch.close();
+
+            assertThatCode(callback::run).doesNotThrowAnyException();
+        }
+
+        @Test
+        void shouldForceShutdownWhenAListenerOutlastsTheCloseTimeout() {
+            var release = new CountDownLatch(1);
+            latch.addListener(listenerBlockingOnNotLeader(release));
+            latch.setCloseTimeoutMillis(300);
+            latch.start();
+            await().atMost(WAIT).until(latch::hasLeadership);
+
+            try {
+                var start = System.nanoTime();
+                latch.close();
+                var elapsedMillis = Duration.ofNanos(System.nanoTime() - start).toMillis();
+
+                assertAll(
+                        () -> assertThat(elapsedMillis).isLessThan(2_000),
+                        () -> assertThat(latch.checkLeadershipStatus()).isInstanceOf(Closed.class),
+                        () -> assertThat(gateway.closed).isTrue()
+                );
+            } finally {
+                release.countDown();
+            }
+        }
+
+        @Test
+        void shouldRestoreInterruptWhenTheClosingThreadIsInterrupted() throws InterruptedException {
+            var release = new CountDownLatch(1);
+            latch.addListener(listenerBlockingOnNotLeader(release));
+            latch.start();
+            await().atMost(WAIT).until(latch::hasLeadership);
+
+            var interruptRestored = new AtomicBoolean();
+            var closer = new Thread(() -> {
+                latch.close();
+                interruptRestored.set(Thread.currentThread().isInterrupted());
+            });
+            closer.start();
+            await().atMost(WAIT).until(() -> closer.getState() == Thread.State.TIMED_WAITING);
+
+            try {
+                closer.interrupt();
+                closer.join(WAIT.toMillis());
+
+                assertAll(
+                        () -> assertThat(closer.isAlive()).isFalse(),
+                        () -> assertThat(interruptRestored).isTrue(),
+                        () -> assertThat(latch.checkLeadershipStatus()).isInstanceOf(Closed.class)
+                );
+            } finally {
+                release.countDown();
+            }
+        }
+
+        @Test
         void shouldBeIdempotent() {
             latch.start();
             await().atMost(WAIT).until(latch::hasLeadership);
@@ -419,6 +544,17 @@ class DynamoDbLeaderLatchTest {
         }
 
         @Test
+        void shouldReturnLookupFailedWhenTheLookupThrows() {
+            gateway.lockAvailable.set(false);
+            gateway.failOwnerLookup.set(true);
+            latch.start();
+
+            assertThat(latch.getLeader())
+                    .isInstanceOfSatisfying(LookupFailed.class,
+                            failed -> assertThat(failed.cause()).hasMessage("simulated lookup error"));
+        }
+
+        @Test
         void shouldReturnRecordedOwner() {
             gateway.lockAvailable.set(false);
             gateway.owner = "other/1.0/host:9090";
@@ -469,14 +605,85 @@ class DynamoDbLeaderLatchTest {
         }
 
         @Test
+        void shouldSkipRunnableWhenNotLeader() {
+            var ran = new AtomicBoolean();
+            Runnable action = () -> ran.set(true);
+
+            var result = latch.whenLeader(action);
+
+            assertAll(
+                    () -> assertThat(result).isEqualTo(new SkippedNotLeader<Void>(new NotStarted())),
+                    () -> assertThat(ran).isFalse()
+            );
+        }
+
+        @Test
+        void shouldRunRunnableWhenLeader() {
+            var ran = new AtomicBoolean();
+            Runnable action = () -> ran.set(true);
+            latch.start();
+            await().atMost(WAIT).until(latch::hasLeadership);
+
+            var result = latch.whenLeader(action);
+
+            assertAll(
+                    () -> assertThat(result).isEqualTo(new RanAsLeader<Void>(null)),
+                    () -> assertThat(ran).isTrue()
+            );
+        }
+
+        @Test
+        void shouldRunRunnableAsyncWhenLeader() {
+            var ran = new AtomicBoolean();
+            Runnable action = () -> ran.set(true);
+            latch.start();
+            await().atMost(WAIT).until(latch::hasLeadership);
+
+            var result = latch.whenLeaderAsync(action).orTimeout(5, TimeUnit.SECONDS).join();
+
+            assertAll(
+                    () -> assertThat(result).isEqualTo(new RanAsLeader<Void>(null)),
+                    () -> assertThat(ran).isTrue()
+            );
+        }
+
+        @Test
+        void shouldRunAsyncOnTheGivenExecutor() {
+            latch.start();
+            await().atMost(WAIT).until(latch::hasLeadership);
+
+            var result = latch.whenLeaderAsync(() -> 42, Runnable::run).join();
+
+            assertThat(result).isEqualTo(new RanAsLeader<>(42));
+        }
+
+        @Test
         void shouldRunAsyncWhenLeader() {
             latch.start();
             await().atMost(WAIT).until(latch::hasLeadership);
 
             var future = latch.whenLeaderAsync(() -> 42);
 
-            assertThat(future.orTimeout(5, java.util.concurrent.TimeUnit.SECONDS).join())
+            assertThat(future.orTimeout(5, TimeUnit.SECONDS).join())
                     .isEqualTo(new RanAsLeader<>(42));
         }
+    }
+
+    private static LeaderLatchListener listenerBlockingOnNotLeader(CountDownLatch release) {
+        return new LeaderLatchListener() {
+            @Override
+            public void isLeader() {
+                // nothing to do
+            }
+
+            @Override
+            public void notLeader() {
+                try {
+                    release.await(30, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
     }
 }
