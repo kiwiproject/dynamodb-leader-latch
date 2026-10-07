@@ -6,6 +6,7 @@ import static org.kiwiproject.base.KiwiStrings.f;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
 import org.kiwiproject.dynamodb.leader.LockGateway.Lease;
@@ -39,8 +40,12 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
 
     private static final long DEFAULT_CLOSE_TIMEOUT_MILLIS = 5_000;
 
+    @Getter
     private final String id;
+
+    @Getter
     private final String leadershipKey;
+
     private final LeaderLatchConfiguration configuration;
     private final Supplier<LockGateway> gatewayFactory;
     private final List<LeaderLatchListener> listeners = new CopyOnWriteArrayList<>();
@@ -111,16 +116,6 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
                                        String hostname,
                                        int port) {
         return f("{}/{}/{}:{}", serviceName, serviceVersion, hostname, port);
-    }
-
-    @Override
-    public String getId() {
-        return id;
-    }
-
-    @Override
-    public String getLeadershipKey() {
-        return leadershipKey;
     }
 
     @VisibleForTesting
