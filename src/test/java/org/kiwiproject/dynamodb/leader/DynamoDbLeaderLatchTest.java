@@ -261,9 +261,10 @@ class DynamoDbLeaderLatchTest {
             var slowConfig = LeaderLatchConfiguration.forTable("test-table")
                     .withTimings(Duration.ofSeconds(90), Duration.ofSeconds(30))
                     .withAcquisitionRetryInterval(Duration.ofMillis(50));
-            var slowLatch = new DynamoDbLeaderLatch(slowConfig, "customer-service", "customer-service/1.0/host:8080", () -> gateway);
 
-            try {
+            try (var slowLatch = new DynamoDbLeaderLatch(
+                    slowConfig, "customer-service", "customer-service/1.0/host:8080", () -> gateway)) {
+
                 slowLatch.start();
                 await().atMost(WAIT).until(slowLatch::hasLeadership);
 
@@ -273,8 +274,6 @@ class DynamoDbLeaderLatchTest {
                         () -> assertThat(slowLatch.hasLeadership()).isFalse(),
                         () -> assertThat(slowLatch.checkLeadershipStatus()).isInstanceOf(NotLeader.class)
                 );
-            } finally {
-                slowLatch.close();
             }
         }
 
