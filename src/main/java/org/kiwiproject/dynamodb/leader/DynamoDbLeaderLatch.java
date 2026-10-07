@@ -43,11 +43,11 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
 
     private static final long DEFAULT_CLOSE_TIMEOUT_MILLIS = 5_000;
 
-    @Getter
+    @Getter(onMethod_ = @Override)
     @ToString.Include
     private final String id;
 
-    @Getter
+    @Getter(onMethod_ = @Override)
     @ToString.Include
     private final String leadershipKey;
 
