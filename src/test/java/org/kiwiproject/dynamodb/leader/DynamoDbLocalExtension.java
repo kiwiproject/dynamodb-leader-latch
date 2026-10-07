@@ -1,5 +1,7 @@
 package org.kiwiproject.dynamodb.leader;
 
+import static java.util.Objects.nonNull;
+
 import com.amazonaws.services.dynamodbv2.local.main.ServerRunner;
 import com.amazonaws.services.dynamodbv2.local.server.DynamoDBProxyServer;
 import org.junit.jupiter.api.extension.AfterAllCallback;
@@ -53,7 +55,7 @@ class DynamoDbLocalExtension implements BeforeAllCallback, AfterAllCallback {
 
     @Override
     public void afterAll(ExtensionContext context) throws Exception {
-        if (server != null) {
+        if (nonNull(server)) {
             server.stop();
         }
     }

@@ -31,9 +31,14 @@ public interface LeaderLatch extends AutoCloseable {
     String getLeadershipKey();
 
     /**
-     * Begin participating in the election and return immediately. Leadership is acquired asynchronously.
+     * Begin participating in the election and return immediately; this never waits to become the leader.
+     * <p>
+     * The returned {@link StartResult} says only whether participation began. Leadership, if won, is
+     * acquired afterward on the latch's own thread, and can be gained and lost many times, which is why
+     * this does not return a one-shot future. Observe leadership with {@link #hasLeadership()},
+     * {@link #checkLeadershipStatus()}, or a {@link LeaderLatchListener}.
      *
-     * @return the outcome
+     * @return whether participation in the election began
      */
     StartResult start();
 

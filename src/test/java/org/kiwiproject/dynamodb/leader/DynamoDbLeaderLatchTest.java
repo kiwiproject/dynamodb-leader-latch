@@ -3,6 +3,7 @@ package org.kiwiproject.dynamodb.leader;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.awaitility.Awaitility.await;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,18 +61,30 @@ class DynamoDbLeaderLatchTest {
 
     @Test
     void shouldHaveIdAndKey() {
-        assertThat(latch.getId()).isEqualTo("customer-service/1.0/host:8080");
-        assertThat(latch.getLeadershipKey()).isEqualTo("customer-service");
-        assertThat(DynamoDbLeaderLatch.leaderLatchId("svc", "1.0", "host", 8080)).isEqualTo("svc/1.0/host:8080");
+        assertAll(
+                () -> assertThat(latch.getId()).isEqualTo("customer-service/1.0/host:8080"),
+                () -> assertThat(latch.getLeadershipKey()).isEqualTo("customer-service"),
+                () -> assertThat(DynamoDbLeaderLatch.leaderLatchId("svc", "1.0", "host", 8080))
+                        .isEqualTo("svc/1.0/host:8080")
+        );
+    }
+
+    @Test
+    void shouldIncludeIdKeyAndStateInToString() {
+        assertThat(latch).hasToString(
+                "DynamoDbLeaderLatch(id=customer-service/1.0/host:8080, leadershipKey=customer-service, state=NEW)");
     }
 
     @Test
     void shouldRejectBlankArguments() {
         var config = LeaderLatchConfiguration.forTable("t");
-        assertThatIllegalArgumentException()
-                .isThrownBy(() -> new DynamoDbLeaderLatch(config, " ", "id", () -> gateway));
-        assertThatIllegalArgumentException()
-                .isThrownBy(() -> new DynamoDbLeaderLatch(config, "key", "", () -> gateway));
+
+        assertAll(
+                () -> assertThatIllegalArgumentException()
+                        .isThrownBy(() -> new DynamoDbLeaderLatch(config, " ", "id", () -> gateway)),
+                () -> assertThatIllegalArgumentException()
+                        .isThrownBy(() -> new DynamoDbLeaderLatch(config, "key", "", () -> gateway))
+        );
     }
 
     @Nested
@@ -79,9 +92,11 @@ class DynamoDbLeaderLatchTest {
 
         @Test
         void shouldBeNotStartedBeforeStart() {
-            assertThat(latch.hasLeadership()).isFalse();
-            assertThat(latch.doesNotHaveLeadership()).isTrue();
-            assertThat(latch.checkLeadershipStatus()).isInstanceOf(NotStarted.class);
+            assertAll(
+                    () -> assertThat(latch.hasLeadership()).isFalse(),
+                    () -> assertThat(latch.doesNotHaveLeadership()).isTrue(),
+                    () -> assertThat(latch.checkLeadershipStatus()).isInstanceOf(NotStarted.class)
+            );
         }
 
         @Test
@@ -98,16 +113,24 @@ class DynamoDbLeaderLatchTest {
                 throw failure;
             });
 
-            assertThat(failingLatch.start()).isEqualTo(new StartResult.Failed(failure));
-            assertThat(failingLatch.checkLeadershipStatus()).isInstanceOf(NotStarted.class);
+            var result = failingLatch.start();
+
+            assertAll(
+                    () -> assertThat(result).isEqualTo(new StartResult.Failed(failure)),
+                    () -> assertThat(failingLatch.checkLeadershipStatus()).isInstanceOf(NotStarted.class)
+            );
         }
 
         @Test
         void shouldNotBlockWaitingForLeadership() {
             gateway.lockAvailable.set(false);
 
-            assertThat(latch.start()).isInstanceOf(StartResult.Started.class);
-            assertThat(latch.hasLeadership()).isFalse();
+            var result = latch.start();
+
+            assertAll(
+                    () -> assertThat(result).isInstanceOf(StartResult.Started.class),
+                    () -> assertThat(latch.hasLeadership()).isFalse()
+            );
         }
     }
 
@@ -124,8 +147,10 @@ class DynamoDbLeaderLatchTest {
             // several more acquisition ticks must not produce more notifications
             var attempts = gateway.acquireAttempts.get();
             await().pollDelay(Duration.ofMillis(300)).atMost(WAIT).until(() -> true);
-            assertThat(gateway.acquireAttempts.get()).isEqualTo(attempts);
-            assertThat(events).containsExactly("isLeader");
+            assertAll(
+                    () -> assertThat(gateway.acquireAttempts.get()).isEqualTo(attempts),
+                    () -> assertThat(events).containsExactly("isLeader")
+            );
         }
 
         @Test
@@ -134,9 +159,11 @@ class DynamoDbLeaderLatchTest {
             latch.start();
 
             await().atMost(WAIT).until(() -> gateway.acquireAttempts.get() >= 3);
-            assertThat(latch.hasLeadership()).isFalse();
-            assertThat(latch.checkLeadershipStatus()).isInstanceOf(NotLeader.class);
-            assertThat(events).isEmpty();
+            assertAll(
+                    () -> assertThat(latch.hasLeadership()).isFalse(),
+                    () -> assertThat(latch.checkLeadershipStatus()).isInstanceOf(NotLeader.class),
+                    () -> assertThat(events).isEmpty()
+            );
         }
 
         @Test
@@ -148,9 +175,11 @@ class DynamoDbLeaderLatchTest {
             gateway.leaseHeld.set(false);
 
             await().atMost(WAIT).until(() -> events.contains("notLeader"));
-            assertThat(latch.hasLeadership()).isFalse();
-            assertThat(gateway.releaseCount).hasValue(1);
-            assertThat(events).containsExactly("isLeader", "notLeader");
+            assertAll(
+                    () -> assertThat(latch.hasLeadership()).isFalse(),
+                    () -> assertThat(gateway.releaseCount).hasValue(1),
+                    () -> assertThat(events).containsExactly("isLeader", "notLeader")
+            );
         }
 
         @Test
@@ -238,11 +267,13 @@ class DynamoDbLeaderLatchTest {
 
             latch.close();
 
-            assertThat(latch.hasLeadership()).isFalse();
-            assertThat(latch.checkLeadershipStatus()).isInstanceOf(Closed.class);
-            assertThat(gateway.releaseCount).hasValue(1);
-            assertThat(gateway.closed).isTrue();
-            assertThat(events).containsExactly("isLeader", "notLeader");
+            assertAll(
+                    () -> assertThat(latch.hasLeadership()).isFalse(),
+                    () -> assertThat(latch.checkLeadershipStatus()).isInstanceOf(Closed.class),
+                    () -> assertThat(gateway.releaseCount).hasValue(1),
+                    () -> assertThat(gateway.closed).isTrue(),
+                    () -> assertThat(events).containsExactly("isLeader", "notLeader")
+            );
         }
 
         @Test
@@ -254,8 +285,10 @@ class DynamoDbLeaderLatchTest {
             latch.close();
             latch.close();
 
-            assertThat(gateway.releaseCount).hasValue(1);
-            assertThat(events).containsExactly("isLeader", "notLeader");
+            assertAll(
+                    () -> assertThat(gateway.releaseCount).hasValue(1),
+                    () -> assertThat(events).containsExactly("isLeader", "notLeader")
+            );
         }
 
         @Test
@@ -269,8 +302,10 @@ class DynamoDbLeaderLatchTest {
             var attempts = gateway.acquireAttempts.get();
 
             await().pollDelay(Duration.ofMillis(300)).atMost(WAIT).until(() -> true);
-            assertThat(gateway.acquireAttempts).hasValue(attempts);
-            assertThat(latch.hasLeadership()).isFalse();
+            assertAll(
+                    () -> assertThat(gateway.acquireAttempts).hasValue(attempts),
+                    () -> assertThat(latch.hasLeadership()).isFalse()
+            );
         }
 
         @Test
@@ -285,8 +320,10 @@ class DynamoDbLeaderLatchTest {
         void shouldCloseWithoutEverStarting() {
             latch.close();
 
-            assertThat(latch.checkLeadershipStatus()).isInstanceOf(Closed.class);
-            assertThat(latch.start()).isInstanceOf(StartResult.Closed.class);
+            assertAll(
+                    () -> assertThat(latch.checkLeadershipStatus()).isInstanceOf(Closed.class),
+                    () -> assertThat(latch.start()).isInstanceOf(StartResult.Closed.class)
+            );
         }
     }
 
@@ -333,9 +370,14 @@ class DynamoDbLeaderLatchTest {
             latch.start();
             await().atMost(WAIT).until(latch::hasLeadership);
 
-            assertThat(latch.whenLeader(() -> "value")).isEqualTo(new RanAsLeader<>("value"));
-            assertThat(latch.whenLeader(() -> events.add("ran"))).isInstanceOf(RanAsLeader.class);
-            assertThat(events).contains("ran");
+            var valueResult = latch.whenLeader(() -> "value");
+            var runnableResult = latch.whenLeader(() -> events.add("ran"));
+
+            assertAll(
+                    () -> assertThat(valueResult).isEqualTo(new RanAsLeader<>("value")),
+                    () -> assertThat(runnableResult).isInstanceOf(RanAsLeader.class),
+                    () -> assertThat(events).contains("ran")
+            );
         }
 
         @Test

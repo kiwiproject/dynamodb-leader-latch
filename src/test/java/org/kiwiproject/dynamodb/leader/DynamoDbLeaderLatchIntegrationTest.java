@@ -2,6 +2,7 @@ package org.kiwiproject.dynamodb.leader;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -77,13 +78,15 @@ class DynamoDbLeaderLatchIntegrationTest {
         });
 
         var leader = leaders().get(0);
-        assertThat(leader).isIn(a, b, c);
-        assertThat(leader.checkLeadershipStatus()).isInstanceOf(LeadershipStatus.IsLeader.class);
 
-        // every participant, leader or not, can see who the leader is
-        latches.forEach(l -> assertThat(l.getLeader())
-                .isInstanceOfSatisfying(Leader.class,
-                        info -> assertThat(info.participantId()).isEqualTo(leader.getId())));
+        assertAll(
+                () -> assertThat(leader).isIn(a, b, c),
+                () -> assertThat(leader.checkLeadershipStatus()).isInstanceOf(LeadershipStatus.IsLeader.class),
+                // every participant, leader or not, can see who the leader is
+                () -> latches.forEach(l -> assertThat(l.getLeader())
+                        .isInstanceOfSatisfying(Leader.class,
+                                info -> assertThat(info.participantId()).isEqualTo(leader.getId())))
+        );
     }
 
     @Test

@@ -1,5 +1,8 @@
 package org.kiwiproject.dynamodb.leader;
 
+import static org.kiwiproject.base.KiwiPreconditions.requireNotBlank;
+import static org.kiwiproject.base.KiwiPreconditions.requireNotNull;
+
 import com.amazonaws.services.dynamodbv2.AcquireLockOptions;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBLockClient;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBLockClientOptions;
@@ -32,7 +35,10 @@ final class AwsLockGateway implements LockGateway {
                    String leadershipKey,
                    String participantId) {
 
-        this.leadershipKey = leadershipKey;
+        requireNotNull(dynamoDbClient, "dynamoDbClient must not be null");
+        requireNotNull(configuration, "configuration must not be null");
+        requireNotBlank(participantId, "participantId must not be blank");
+        this.leadershipKey = requireNotBlank(leadershipKey, "leadershipKey must not be blank");
 
         var leaseMillis = configuration.leaseDuration().toMillis();
         var heartbeatMillis = configuration.heartbeatPeriod().toMillis();

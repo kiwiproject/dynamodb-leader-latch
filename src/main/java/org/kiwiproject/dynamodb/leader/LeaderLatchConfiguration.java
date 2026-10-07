@@ -1,8 +1,9 @@
 package org.kiwiproject.dynamodb.leader;
 
-import static com.google.common.base.Preconditions.checkArgument;
+import static org.kiwiproject.base.KiwiPreconditions.checkArgument;
 import static org.kiwiproject.base.KiwiPreconditions.checkArgumentNotBlank;
 import static org.kiwiproject.base.KiwiPreconditions.checkArgumentNotNull;
+import static org.kiwiproject.time.KiwiDurations.isPositive;
 
 import java.time.Duration;
 
@@ -57,13 +58,14 @@ public record LeaderLatchConfiguration(String tableName,
         checkPositive(heartbeatPeriod, "heartbeatPeriod");
         checkPositive(acquisitionRetryInterval, "acquisitionRetryInterval");
         checkArgument(leaseDuration.compareTo(heartbeatPeriod.multipliedBy(MIN_LEASE_TO_HEARTBEAT_RATIO)) >= 0,
-                "leaseDuration (%s) must be at least %s times heartbeatPeriod (%s)",
+                IllegalArgumentException.class,
+                "leaseDuration ({}) must be at least {} times heartbeatPeriod ({})",
                 leaseDuration, MIN_LEASE_TO_HEARTBEAT_RATIO, heartbeatPeriod);
     }
 
     private static void checkPositive(Duration duration, String name) {
-        checkArgumentNotNull(duration, "%s must not be null", name);
-        checkArgument(!duration.isNegative() && !duration.isZero(), "%s must be positive", name);
+        checkArgumentNotNull(duration, "{} must not be null", name);
+        checkArgument(isPositive(duration), IllegalArgumentException.class, "{} must be positive", name);
     }
 
     /**

@@ -1,12 +1,14 @@
 package org.kiwiproject.dynamodb.leader;
 
+import static java.util.Objects.isNull;
+import static java.util.Objects.nonNull;
 import static org.kiwiproject.base.KiwiPreconditions.requireNotBlank;
 import static org.kiwiproject.base.KiwiPreconditions.requireNotNull;
 import static org.kiwiproject.base.KiwiStrings.f;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.MoreObjects;
 import lombok.Getter;
+import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
 import org.kiwiproject.dynamodb.leader.LockGateway.Lease;
@@ -34,6 +36,7 @@ import java.util.function.Supplier;
  * {@link DynamoDbClient} and is responsible for closing it; this class never closes it.
  */
 @Slf4j
+@ToString(onlyExplicitlyIncluded = true)
 public class DynamoDbLeaderLatch implements LeaderLatch {
 
     private enum State { NEW, STARTED, CLOSED }
@@ -41,9 +44,11 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
     private static final long DEFAULT_CLOSE_TIMEOUT_MILLIS = 5_000;
 
     @Getter
+    @ToString.Include
     private final String id;
 
     @Getter
+    @ToString.Include
     private final String leadershipKey;
 
     private final LeaderLatchConfiguration configuration;
@@ -52,6 +57,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
     private final Object stateLock = new Object();
     private final AtomicInteger acquisitionAttempts = new AtomicInteger();
 
+    @ToString.Include
     private volatile State state = State.NEW;
     private volatile @Nullable LockGateway gateway;
     private volatile @Nullable ScheduledExecutorService executor;
@@ -129,15 +135,6 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
     }
 
     @Override
-    public String toString() {
-        return MoreObjects.toStringHelper(this)
-                .add("id", id)
-                .add("leadershipKey", leadershipKey)
-                .add("state", state)
-                .toString();
-    }
-
-    @Override
     public StartResult start() {
         synchronized (stateLock) {
             if (state == State.CLOSED) {
@@ -173,10 +170,10 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
                 state = State.NEW;
                 gateway = null;
                 executor = null;
-                if (newExecutor != null) {
+                if (nonNull(newExecutor)) {
                     newExecutor.shutdownNow();
                 }
-                if (newGateway != null) {
+                if (nonNull(newGateway)) {
                     newGateway.close();
                 }
                 return new StartResult.Failed(e);
@@ -203,7 +200,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
 
     private void acquisitionTick() {
         var currentGateway = gateway;
-        if (state != State.STARTED || currentGateway == null || lease != null) {
+        if (state != State.STARTED || isNull(currentGateway) || nonNull(lease)) {
             return;
         }
 
@@ -233,7 +230,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
 
     private void leaseWatchTick() {
         var current = lease;
-        if (current != null && !current.isHeld()) {
+        if (nonNull(current) && !current.isHeld()) {
             becomeFollower("lease can no longer be proven");
         }
     }
@@ -241,7 +238,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
     // Called on a lock client heartbeat thread. Only hand off to the latch executor.
     private void onLeaseInDanger() {
         var currentExecutor = executor;
-        if (currentExecutor == null) {
+        if (isNull(currentExecutor)) {
             return;
         }
         try {
@@ -253,7 +250,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
 
     private void becomeLeader(Lease newLease) {
         synchronized (stateLock) {
-            if (state != State.STARTED || lease != null) {
+            if (state != State.STARTED || nonNull(lease)) {
                 releaseQuietly(newLease);
                 return;
             }
@@ -271,7 +268,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
             lease = null;
         }
 
-        if (old == null) {
+        if (isNull(old)) {
             return;
         }
 
@@ -306,7 +303,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
     @Override
     public boolean hasLeadership() {
         var current = lease;
-        return state == State.STARTED && current != null && current.isHeld();
+        return state == State.STARTED && nonNull(current) && current.isHeld();
     }
 
     @Override
@@ -321,18 +318,18 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
         }
 
         var current = lease;
-        if (current != null) {
+        if (nonNull(current)) {
             return current.isHeld() ? new LeadershipStatus.IsLeader() : new LeadershipStatus.NotLeader();
         }
 
         var error = lastAcquisitionError;
-        return error != null ? new LeadershipStatus.Uncertain(error) : new LeadershipStatus.NotLeader();
+        return nonNull(error) ? new LeadershipStatus.Uncertain(error) : new LeadershipStatus.NotLeader();
     }
 
     @Override
     public LeaderInfo getLeader() {
         var currentGateway = gateway;
-        if (state != State.STARTED || currentGateway == null) {
+        if (state != State.STARTED || isNull(currentGateway)) {
             return new LeaderInfo.LookupFailed(new IllegalStateException("leader latch is not started"));
         }
 
@@ -372,19 +369,19 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
 
         LOG.info("Stopping leader latch {} for key {}", id, leadershipKey);
 
-        if (currentExecutor != null) {
-            stopExecutor(currentExecutor, held != null);
+        if (nonNull(currentExecutor)) {
+            stopExecutor(currentExecutor, nonNull(held));
         }
-        if (held != null) {
+        if (nonNull(held)) {
             LOG.info("Leadership lost for key {} by {}: latch closed", leadershipKey, id);
         }
 
         var gatewayToClose = currentGateway;
         runBounded("release lock and close lock client", () -> {
-            if (held != null) {
+            if (nonNull(held)) {
                 releaseQuietly(held);
             }
-            if (gatewayToClose != null) {
+            if (nonNull(gatewayToClose)) {
                 gatewayToClose.close();
             }
         });
