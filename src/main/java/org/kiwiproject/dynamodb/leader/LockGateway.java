@@ -14,17 +14,18 @@ interface LockGateway extends AutoCloseable {
      * @param onLeaseInDanger invoked (possibly on a lock client thread) when the lease has gone too long
      *                        without a successful heartbeat; must not block
      * @return the lease if acquired, or empty if the lock is held by someone else
-     * @throws Exception for any DynamoDB/API error
+     * @throws InterruptedException if interrupted while acquiring
+     * @throws RuntimeException     for any DynamoDB/API error
      */
-    Optional<Lease> tryAcquire(Runnable onLeaseInDanger) throws Exception;
+    Optional<Lease> tryAcquire(Runnable onLeaseInDanger) throws InterruptedException;
 
     /**
      * Read the participant ID that DynamoDB records as the lock owner.
      *
      * @return the owner, or empty if there is no lock record
-     * @throws Exception for any DynamoDB/API error
+     * @throws RuntimeException for any DynamoDB/API error
      */
-    Optional<String> currentOwner() throws Exception;
+    Optional<String> currentOwner();
 
     @Override
     void close();
@@ -44,8 +45,8 @@ interface LockGateway extends AutoCloseable {
         /**
          * Release the lease.
          *
-         * @throws Exception if the release fails
+         * @throws RuntimeException if the release fails
          */
-        void release() throws Exception;
+        void release();
     }
 }

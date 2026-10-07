@@ -24,7 +24,7 @@ class FakeLockGateway implements LockGateway {
     volatile String owner;
 
     @Override
-    public Optional<Lease> tryAcquire(Runnable onLeaseInDanger) throws Exception {
+    public Optional<Lease> tryAcquire(Runnable onLeaseInDanger) {
         acquireAttempts.incrementAndGet();
         this.onLeaseInDanger = onLeaseInDanger;
 
@@ -44,14 +44,22 @@ class FakeLockGateway implements LockGateway {
             }
 
             @Override
-            public void release() throws InterruptedException {
+            public void release() {
                 var gate = releaseGate;
                 if (nonNull(gate)) {
-                    gate.await(30, TimeUnit.SECONDS);
+                    awaitGate(gate);
                 }
                 releaseCount.incrementAndGet();
             }
         });
+    }
+
+    private static void awaitGate(CountDownLatch gate) {
+        try {
+            gate.await(30, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Override
