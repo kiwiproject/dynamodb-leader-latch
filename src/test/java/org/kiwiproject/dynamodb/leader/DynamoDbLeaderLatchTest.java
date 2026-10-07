@@ -329,7 +329,7 @@ class DynamoDbLeaderLatchTest {
         }
 
         @Test
-        void shouldBoundCloseTimeWhenReleaseHangs() throws InterruptedException {
+        void shouldBoundCloseTimeWhenReleaseHangs() {
             var gate = new CountDownLatch(1);
             gateway.releaseGate = gate;
             latch.setCloseTimeoutMillis(300);
