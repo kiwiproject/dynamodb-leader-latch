@@ -1,0 +1,31 @@
+name: Print Delomboked Sources
+
+on:
+  workflow_dispatch:
+    # no inputs needed here
+
+jobs:
+  delombok-and-print:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6  # v6.0.1
+        with:
+          distribution: zulu
+          java-version: 17
+
+      - name: Cache Maven packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v5
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2        
+        
+      - name: Run Delombok
+        uses: sleberknight/delombok-action@56a7f9d35ad110b4c85e400353c355124f476c08
+        
+      - name: Print the Delomboked code
+        uses: sleberknight/print-delombok@13bf5860ede3e769a836dda7804df9e08a685e55

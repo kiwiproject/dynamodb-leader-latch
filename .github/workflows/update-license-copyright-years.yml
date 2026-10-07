@@ -1,0 +1,21 @@
+name: Update copyright year(s) in license file
+
+on:
+  schedule:
+    - cron: '0 3 1 1 *' # 03:00 AM on January 1
+  workflow_dispatch:
+    # no inputs needed here
+
+jobs:
+  update-license-year:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: FantasticFiasco/action-update-license-year@f180e962fa988db222d8f03ef4636750312d1b3d
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: LICENSE.txt
+          labels: documentation
+  
