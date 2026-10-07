@@ -18,7 +18,11 @@ Framework integrations are intended to live in separate libraries.
 ## Usage
 
 ```java
-var dynamoDb = DynamoDbClient.create();  // you own this client; the latch never closes it
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;  // AWS SDK v2
+
+// Default region and credentials; on ECS this uses the task role.
+// You own this client and must close it; the latch never closes it.
+var dynamoDb = DynamoDbClient.create();
 var config = LeaderLatchConfiguration.forTable("service-leader-locks");
 
 var participantId = DynamoDbLeaderLatch.leaderLatchId("order-service", "1.2.3", hostname, port);
