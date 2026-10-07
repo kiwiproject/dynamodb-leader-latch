@@ -32,7 +32,8 @@ class LeaderLatchConfigurationTest {
     @ValueSource(strings = {" ", "\t"})
     void shouldRejectBlankTableName(String tableName) {
         assertThatIllegalArgumentException()
-                .isThrownBy(() -> LeaderLatchConfiguration.forTable(tableName));
+                .isThrownBy(() -> LeaderLatchConfiguration.forTable(tableName))
+                .withMessage("tableName must not be blank");
     }
 
     @Test

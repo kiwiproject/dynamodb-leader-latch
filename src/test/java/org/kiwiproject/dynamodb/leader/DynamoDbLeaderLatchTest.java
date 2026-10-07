@@ -20,6 +20,8 @@ import org.kiwiproject.dynamodb.leader.WhenLeaderResult.ActionFailed;
 import org.kiwiproject.dynamodb.leader.WhenLeaderResult.RanAsLeader;
 import org.kiwiproject.dynamodb.leader.WhenLeaderResult.SkippedNotLeader;
 
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -76,16 +78,40 @@ class DynamoDbLeaderLatchTest {
                 "DynamoDbLeaderLatch(id=customer-service/1.0/host:8080, leadershipKey=customer-service, state=NEW)");
     }
 
-    @Test
-    void shouldRejectBlankArguments() {
-        var config = LeaderLatchConfiguration.forTable("t");
+    @Nested
+    class Validation {
 
-        assertAll(
-                () -> assertThatIllegalArgumentException()
-                        .isThrownBy(() -> new DynamoDbLeaderLatch(config, " ", "id", () -> gateway)),
-                () -> assertThatIllegalArgumentException()
-                        .isThrownBy(() -> new DynamoDbLeaderLatch(config, "key", "", () -> gateway))
-        );
+        private final LeaderLatchConfiguration config = LeaderLatchConfiguration.forTable("t");
+
+        @Test
+        void shouldRejectBlankLeadershipKeyAndParticipantId() {
+            assertAll(
+                    () -> assertThatIllegalArgumentException()
+                            .isThrownBy(() -> new DynamoDbLeaderLatch(config, " ", "id", () -> gateway))
+                            .withMessage("leadershipKey must not be blank"),
+                    () -> assertThatIllegalArgumentException()
+                            .isThrownBy(() -> new DynamoDbLeaderLatch(config, "key", "", () -> gateway))
+                            .withMessage("participantId must not be blank")
+            );
+        }
+
+        @Test
+        void shouldRejectNullArguments() {
+            assertAll(
+                    () -> assertThatIllegalArgumentException()
+                            .isThrownBy(() -> new DynamoDbLeaderLatch(null, "key", "id", () -> gateway))
+                            .withMessage("configuration must not be null"),
+                    () -> assertThatIllegalArgumentException()
+                            .isThrownBy(() -> new DynamoDbLeaderLatch(config, "key", "id", null))
+                            .withMessage("gatewayFactory must not be null"),
+                    () -> assertThatIllegalArgumentException()
+                            .isThrownBy(() -> new DynamoDbLeaderLatch((DynamoDbClient) null, config, "key", "id"))
+                            .withMessage("dynamoDbClient must not be null"),
+                    () -> assertThatIllegalArgumentException()
+                            .isThrownBy(() -> latch.addListener(null))
+                            .withMessage("listener must not be null")
+            );
+        }
     }
 
     @Nested
