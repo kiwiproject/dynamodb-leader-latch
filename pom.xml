@@ -93,6 +93,18 @@
             <groupId>com.amazonaws</groupId>
             <artifactId>dynamodb-lock-client</artifactId>
             <version>${dynamodb-lock-client.version}</version>
+            <exclusions>
+                <!--
+                    The lock client declares AWS SDK modules at an older version (2.32.10). Consumers of this library
+                    do not inherit our AWS SDK BOM import, so they would end up with a mix of SDK versions. Exclude them
+                    and rely on the software.amazon.awssdk:dynamodb dependency below, which brings in all the SDK
+                    modules the lock client needs, all at the same version.
+                -->
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>
