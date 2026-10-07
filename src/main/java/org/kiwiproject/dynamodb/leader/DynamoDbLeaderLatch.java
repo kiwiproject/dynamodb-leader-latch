@@ -22,6 +22,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 /**
@@ -59,16 +60,16 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
 
     @ToString.Include
     private volatile State state = State.NEW;
-    private volatile @Nullable LockGateway gateway;
-    private volatile @Nullable ScheduledExecutorService executor;
-    private volatile @Nullable Lease lease;
-    private volatile @Nullable Throwable lastAcquisitionError;
+    private final AtomicReference<@Nullable LockGateway> gateway = new AtomicReference<>();
+    private final AtomicReference<@Nullable ScheduledExecutorService> executor = new AtomicReference<>();
+    private final AtomicReference<@Nullable Lease> lease = new AtomicReference<>();
+    private final AtomicReference<@Nullable Throwable> lastAcquisitionError = new AtomicReference<>();
 
     // only accessed on the latch executor thread
     private boolean acquisitionErrorLogged;
 
     private volatile long closeTimeoutMillis = DEFAULT_CLOSE_TIMEOUT_MILLIS;
-    private volatile @Nullable Thread latchThread;
+    private final AtomicReference<@Nullable Thread> latchThread = new AtomicReference<>();
 
     /**
      * Create a latch.
@@ -154,8 +155,8 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
                 var retryMillis = configuration.acquisitionRetryInterval().toMillis();
                 var watchMillis = Math.max(1, configuration.heartbeatPeriod().toMillis() / 2);
 
-                gateway = newGateway;
-                executor = newExecutor;
+                gateway.set(newGateway);
+                executor.set(newExecutor);
                 state = State.STARTED;
 
                 newExecutor.scheduleWithFixedDelay(() -> runSafely("acquisition", this::acquisitionTick),
@@ -167,8 +168,8 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
             } catch (Exception e) {
                 LOG.error("Unable to start leader latch {} for key {}", id, leadershipKey, e);
                 state = State.NEW;
-                gateway = null;
-                executor = null;
+                gateway.set(null);
+                executor.set(null);
                 if (nonNull(newExecutor)) {
                     newExecutor.shutdownNow();
                 }
@@ -184,7 +185,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
         return Executors.newSingleThreadScheduledExecutor(runnable -> {
             var thread = new Thread(runnable, "dynamodb-leader-latch-" + leadershipKey);
             thread.setDaemon(true);
-            latchThread = thread;
+            latchThread.set(thread);
             return thread;
         });
     }
@@ -199,15 +200,15 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
     }
 
     private void acquisitionTick() {
-        var currentGateway = gateway;
-        if (state != State.STARTED || isNull(currentGateway) || nonNull(lease)) {
+        var currentGateway = gateway.get();
+        if (state != State.STARTED || isNull(currentGateway) || nonNull(lease.get())) {
             return;
         }
 
         try {
             acquisitionAttempts.incrementAndGet();
             var acquired = currentGateway.tryAcquire(this::onLeaseInDanger);
-            lastAcquisitionError = null;
+            lastAcquisitionError.set(null);
             acquisitionErrorLogged = false;
 
             if (acquired.isPresent()) {
@@ -218,7 +219,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (Exception e) {
-            lastAcquisitionError = e;
+            lastAcquisitionError.set(e);
             if (acquisitionErrorLogged) {
                 LOG.debug("Error trying to acquire leadership for key {}", leadershipKey, e);
             } else {
@@ -229,7 +230,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
     }
 
     private void leaseWatchTick() {
-        var current = lease;
+        var current = lease.get();
         if (nonNull(current) && !current.isHeld()) {
             becomeFollower("lease can no longer be proven");
         }
@@ -237,7 +238,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
 
     // Called on a lock client heartbeat thread. Only hand off to the latch executor.
     private void onLeaseInDanger() {
-        var currentExecutor = executor;
+        var currentExecutor = executor.get();
         if (isNull(currentExecutor)) {
             return;
         }
@@ -251,9 +252,9 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
     private void becomeLeader(Lease newLease) {
         boolean accepted;
         synchronized (stateLock) {
-            accepted = state == State.STARTED && isNull(lease);
+            accepted = state == State.STARTED && isNull(lease.get());
             if (accepted) {
-                lease = newLease;
+                lease.set(newLease);
             }
         }
 
@@ -270,8 +271,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
     private void becomeFollower(String reason) {
         Lease old;
         synchronized (stateLock) {
-            old = lease;
-            lease = null;
+            old = lease.getAndSet(null);
         }
 
         if (isNull(old)) {
@@ -311,7 +311,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
 
     @Override
     public boolean hasLeadership() {
-        var current = lease;
+        var current = lease.get();
         return state == State.STARTED && nonNull(current) && current.isHeld();
     }
 
@@ -326,18 +326,18 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
                 break;
         }
 
-        var current = lease;
+        var current = lease.get();
         if (nonNull(current)) {
             return current.isHeld() ? new LeadershipStatus.IsLeader() : new LeadershipStatus.NotLeader();
         }
 
-        var error = lastAcquisitionError;
+        var error = lastAcquisitionError.get();
         return nonNull(error) ? new LeadershipStatus.Uncertain(error) : new LeadershipStatus.NotLeader();
     }
 
     @Override
     public LeaderInfo getLeader() {
-        var currentGateway = gateway;
+        var currentGateway = gateway.get();
         if (state != State.STARTED || isNull(currentGateway)) {
             return new LeaderInfo.LookupFailed(new IllegalStateException("leader latch is not started"));
         }
@@ -370,10 +370,9 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
                 return;
             }
             state = State.CLOSED;
-            held = lease;
-            lease = null;
-            currentExecutor = executor;
-            currentGateway = gateway;
+            held = lease.getAndSet(null);
+            currentExecutor = executor.get();
+            currentGateway = gateway.get();
         }
 
         LOG.info("Stopping leader latch {} for key {}", id, leadershipKey);
@@ -411,7 +410,7 @@ public class DynamoDbLeaderLatch implements LeaderLatch {
         // Tasks that were already queued (such as the notification above) still run after shutdown()
         toStop.shutdown();
 
-        if (Thread.currentThread() == latchThread) {
+        if (Thread.currentThread() == latchThread.get()) {
             // close() was called from a listener on the latch thread; waiting here would only wait for ourselves
             return;
         }
