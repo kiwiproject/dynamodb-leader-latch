@@ -4,7 +4,9 @@
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=kiwiproject_dynamodb-leader-latch&metric=alert_status)](https://sonarcloud.io/dashboard?id=kiwiproject_dynamodb-leader-latch)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=kiwiproject_dynamodb-leader-latch&metric=coverage)](https://sonarcloud.io/dashboard?id=kiwiproject_dynamodb-leader-latch)
 [![CodeQL](https://github.com/kiwiproject/dynamodb-leader-latch/actions/workflows/codeql.yml/badge.svg)](https://github.com/kiwiproject/dynamodb-leader-latch/actions/workflows/codeql.yml)
+[![javadoc](https://javadoc.io/badge2/org.kiwiproject/dynamodb-leader-latch/javadoc.svg)](https://javadoc.io/doc/org.kiwiproject/dynamodb-leader-latch)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Maven Central](https://img.shields.io/maven-central/v/org.kiwiproject/dynamodb-leader-latch)](https://central.sonatype.com/artifact/org.kiwiproject/dynamodb-leader-latch/)
 
 A small library that elects one leader among multiple instances of the same logical service,
 using Amazon DynamoDB (via the AWS Labs
@@ -15,9 +17,19 @@ It is the DynamoDB counterpart to
 framework-independent core: it has no Curator, ZooKeeper, Dropwizard, or Helidon dependency.
 Framework integrations are intended to live in separate libraries.
 
-> Status: under development. Not yet released.
-
 ## Usage
+
+Add the dependency:
+
+```xml
+<dependency>
+    <groupId>org.kiwiproject</groupId>
+    <artifactId>dynamodb-leader-latch</artifactId>
+    <version>0.1.0</version>
+</dependency>
+```
+
+Then create and start a latch:
 
 ```java
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;  // AWS SDK v2
