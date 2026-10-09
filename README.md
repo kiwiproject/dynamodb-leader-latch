@@ -59,6 +59,11 @@ if (latch.hasLeadership()) {
 
 // or switch over the outcome
 latch.whenLeader(() -> pollExternalService());
+
+// On shutdown, close the latch first (it releases the lock), then the client it uses.
+// The latch never closes the DynamoDbClient, so you must.
+latch.close();
+dynamoDb.close();
 ```
 
 Expected failures (DynamoDB unreachable, lock held by someone else) are returned as values, not
@@ -106,8 +111,14 @@ The lock client needs only item-level access to the table:
 
 ### Configuring the `DynamoDbClient`
 
-The latch uses the `DynamoDbClient` you give it, for everything, and never closes it. So credentials, region,
-endpoint, TLS, and timeouts are all configured by you when you build the client.
+The latch uses the `DynamoDbClient` you give it, for everything. So credentials, region, endpoint, TLS, and timeouts
+are all configured by you when you build the client.
+
+**You must close the `DynamoDbClient` yourself.** The latch never closes it, and an unclosed client keeps its
+connections and threads alive. Close the latch first, then the client, because the latch uses the client until it is
+closed. In an application framework, register the client's `close()` for shutdown before the latch is registered, since
+most frameworks stop things in reverse order of registration (in Dropwizard, a `Managed` whose `stop()` closes the
+client).
 
 **Custom CA certificates.** If DynamoDB is reached through an endpoint whose certificate is signed by a CA that is not
 in the JVM's default trust store, either point the JVM at a trust store that includes it
@@ -124,7 +135,7 @@ var dynamoDb = DynamoDbClient.builder()
 ```
 
 Pass the HTTP client *builder* to `httpClientBuilder(...)` so that the `DynamoDbClient` closes the HTTP client when you
-close it. `Apache5HttpClient` is in `software.amazon.awssdk:apache5-client`, which this library brings in at runtime
+close the `DynamoDbClient`. `Apache5HttpClient` is in `software.amazon.awssdk:apache5-client`, which this library brings in at runtime
 scope, so declare it as a dependency yourself if you compile against it. A `javax.net.ssl.SSLHandshakeException` or
 `PKIX path building failed` at startup means the client does not trust the endpoint's certificate.
 
