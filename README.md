@@ -104,6 +104,35 @@ The lock client needs only item-level access to the table:
 
 `CreateTable` and `DescribeTable` are not required.
 
+### Configuring the `DynamoDbClient`
+
+The latch uses the `DynamoDbClient` you give it, for everything, and never closes it. So credentials, region,
+endpoint, TLS, and timeouts are all configured by you when you build the client.
+
+**Custom CA certificates.** If DynamoDB is reached through an endpoint whose certificate is signed by a CA that is not
+in the JVM's default trust store, either point the JVM at a trust store that includes it
+(`-Djavax.net.ssl.trustStore=...` and `-Djavax.net.ssl.trustStorePassword=...`), or give the HTTP client your own
+trust managers:
+
+```java
+var httpClientBuilder = Apache5HttpClient.builder()
+        .tlsTrustManagersProvider(() -> trustManagers);   // a TrustManager[] built from your trust store
+
+var dynamoDb = DynamoDbClient.builder()
+        .httpClientBuilder(httpClientBuilder)
+        .build();
+```
+
+Pass the HTTP client *builder* to `httpClientBuilder(...)` so that the `DynamoDbClient` closes the HTTP client when you
+close it. `Apache5HttpClient` is in `software.amazon.awssdk:apache5-client`, which this library brings in at runtime
+scope, so declare it as a dependency yourself if you compile against it. A `javax.net.ssl.SSLHandshakeException` or
+`PKIX path building failed` at startup means the client does not trust the endpoint's certificate.
+
+**Timeouts.** The SDK's default timeouts and retries are patient. A heartbeat call that hangs counts against the lease
+(see the table below), so set the HTTP client's connection and socket timeouts and the client's
+`apiCallAttemptTimeout` and `apiCallTimeout` (through `overrideConfiguration`) well below the lease duration, and
+`apiCallTimeout` no longer than the heartbeat period.
+
 ### Configuration
 
 | Setting | Default | Notes |
