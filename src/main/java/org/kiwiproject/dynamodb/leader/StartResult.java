@@ -28,6 +28,11 @@ public sealed interface StartResult {
      * @param cause the reason it could not be started
      */
     record Failed(Throwable cause) implements StartResult {
+        /**
+         * Validates the cause.
+         *
+         * @throws IllegalArgumentException if the cause is null
+         */
         public Failed {
             checkArgumentNotNull(cause, "cause must not be null");
         }
