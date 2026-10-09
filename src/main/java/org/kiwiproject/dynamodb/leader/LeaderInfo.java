@@ -21,6 +21,11 @@ public sealed interface LeaderInfo {
      * @param observedAt    when the record was read
      */
     record Leader(String participantId, Instant observedAt) implements LeaderInfo {
+        /**
+         * Validates the participant ID and observation time.
+         *
+         * @throws IllegalArgumentException if the participant ID is blank or the time is null
+         */
         public Leader {
             checkArgumentNotBlank(participantId, "participantId must not be blank");
             checkArgumentNotNull(observedAt, "observedAt must not be null");
@@ -38,6 +43,11 @@ public sealed interface LeaderInfo {
      * @param cause the error that occurred looking up the lock record
      */
     record LookupFailed(Throwable cause) implements LeaderInfo {
+        /**
+         * Validates the cause.
+         *
+         * @throws IllegalArgumentException if the cause is null
+         */
         public LookupFailed {
             checkArgumentNotNull(cause, "cause must not be null");
         }

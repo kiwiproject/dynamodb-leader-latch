@@ -46,6 +46,11 @@ public sealed interface LeadershipStatus {
      * @param cause the error that prevented determining the status
      */
     record Uncertain(Throwable cause) implements LeadershipStatus {
+        /**
+         * Validates the cause.
+         *
+         * @throws IllegalArgumentException if the cause is null
+         */
         public Uncertain {
             checkArgumentNotNull(cause, "cause must not be null");
         }

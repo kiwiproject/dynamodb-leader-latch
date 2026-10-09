@@ -26,6 +26,11 @@ public sealed interface WhenLeaderResult<T> {
      * @param <T>    the result type
      */
     record SkippedNotLeader<T>(LeadershipStatus status) implements WhenLeaderResult<T> {
+        /**
+         * Validates the status.
+         *
+         * @throws IllegalArgumentException if the status is null
+         */
         public SkippedNotLeader {
             checkArgumentNotNull(status, "status must not be null");
         }
@@ -38,6 +43,11 @@ public sealed interface WhenLeaderResult<T> {
      * @param <T>   the result type
      */
     record ActionFailed<T>(Throwable error) implements WhenLeaderResult<T> {
+        /**
+         * Validates the error.
+         *
+         * @throws IllegalArgumentException if the error is null
+         */
         public ActionFailed {
             checkArgumentNotNull(error, "error must not be null");
         }
