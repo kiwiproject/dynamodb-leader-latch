@@ -144,6 +144,28 @@ scope, so declare it as a dependency yourself if you compile against it. A `java
 `apiCallAttemptTimeout` and `apiCallTimeout` (through `overrideConfiguration`) well below the lease duration, and
 `apiCallTimeout` no longer than the heartbeat period.
 
+A starting point, not a measured recommendation, for the default 5-second heartbeat:
+
+```java
+var httpClientBuilder = Apache5HttpClient.builder()
+        .connectionTimeout(Duration.ofSeconds(2))
+        .socketTimeout(Duration.ofSeconds(3))
+        .connectionAcquisitionTimeout(Duration.ofSeconds(3));
+
+var dynamoDb = DynamoDbClient.builder()
+        .httpClientBuilder(httpClientBuilder)
+        .overrideConfiguration(ClientOverrideConfiguration.builder()
+                .apiCallAttemptTimeout(Duration.ofSeconds(3))   // one attempt
+                .apiCallTimeout(Duration.ofSeconds(5))          // all attempts, including retries
+                .build())
+        .build();
+```
+
+These values have not been tested with this library, so adjust them for your network and your `leaseDuration` and
+`heartbeatPeriod`. Keep `apiCallAttemptTimeout` below `apiCallTimeout`, and `apiCallTimeout` no longer than the
+heartbeat period. If you also use custom trust managers (above), put `tlsTrustManagersProvider(...)` on the same
+`Apache5HttpClient` builder.
+
 ### Configuration
 
 | Setting | Default | Notes |
