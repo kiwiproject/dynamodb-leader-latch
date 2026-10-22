@@ -82,6 +82,18 @@
                 <artifactId>kiwi-test</artifactId>
                 <version>${kiwi-test.version}</version>
             </dependency>
+
+            <dependency>
+                <groupId>com.amazonaws</groupId>
+                <artifactId>dynamodb-lock-client</artifactId>
+                <version>${dynamodb-lock-client.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>software.amazon.dynamodb</groupId>
+                <artifactId>DynamoDBLocal</artifactId>
+                <version>${dynamodb-local.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -92,7 +104,6 @@
         <dependency>
             <groupId>com.amazonaws</groupId>
             <artifactId>dynamodb-lock-client</artifactId>
-            <version>${dynamodb-lock-client.version}</version>
             <exclusions>
                 <!--
                     The lock client declares AWS SDK modules at an older version (2.32.10). Consumers of this library
@@ -132,7 +143,6 @@
         <dependency>
             <groupId>software.amazon.dynamodb</groupId>
             <artifactId>DynamoDBLocal</artifactId>
-            <version>${dynamodb-local.version}</version>
             <scope>test</scope>
             <exclusions>
                 <!-- route DynamoDB Local's Log4j 2 API calls to SLF4J (logback) instead -->
